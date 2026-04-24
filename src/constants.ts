@@ -1,0 +1,16 @@
+export const COMMON_TAGS: { name: string; hint: string }[] = [
+  { name: "Title",       hint: "Title or name" },
+  { name: "Artist",      hint: "Photographer or creator" },
+  { name: "Copyright",   hint: "Copyright notice" },
+  { name: "Description", hint: "Caption / description" },
+  { name: "Keywords",    hint: "Comma-separated keywords" },
+  { name: "Rating",      hint: "Star rating (0–5)" },
+  { name: "Comment",     hint: "Free-form comment" },
+  { name: "Author",      hint: "Author" },
+  { name: "Creator",     hint: "Creator" },
+  { name: "Subject",     hint: "Subject" },
+  { name: "Album",       hint: "Album (audio)" },
+  { name: "Genre",       hint: "Genre (audio / video)" },
+  { name: "Year",        hint: "Year (audio)" },
+  { name: "Director",    hint: "Director (video)" },
+];

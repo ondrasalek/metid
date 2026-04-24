@@ -1,0 +1,32 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "shell:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "exiftool",
+          "sidecar": true,
+          "args": ["-j", "-G", "-n", "--", { "validator": "^.+$" }]
+        },
+        {
+          "name": "exiftool",
+          "sidecar": true,
+          "args": [
+            "-overwrite_original",
+            "-@",
+            { "validator": "^.+$" },
+            "--",
+            { "validator": "^.+$" }
+          ]
+        }
+      ]
+    }
+  ]
+}
