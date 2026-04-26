@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTD/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Explicitly declare we are NOT a sandboxed app.
+
+        Tauri v2 doesn't enable the App Sandbox by default, but stating it
+        here makes the posture intentional and survives any future tooling
+        change. A non-sandboxed app has full filesystem access subject only
+        to POSIX permissions and macOS TCC (which is governed by the
+        usage-description strings in Info.plist).
+    -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+
+    <!--
+        Hardened-runtime escape hatch: allow loading dylibs not signed by
+        the same Team ID as the host binary.
+
+        Required because:
+          • The bundled mkvpropedit binary plus ~22 dylibs in
+            Contents/Resources/mkvpropedit-libs/ are ad-hoc signed (no Team ID).
+          • Without this entitlement the hardened runtime refuses to load any
+            dylib whose signature isn't from the host's signing identity, and
+            mkvpropedit dies at startup with a dyld error.
+          • Our bundle script (scripts/bundle-mkvpropedit.sh) runs
+            `codesign --sign -` on every dylib, which produces ad-hoc
+            signatures — sufficient to satisfy the kernel's code-signing
+            requirement, but rejected by library validation without this key.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

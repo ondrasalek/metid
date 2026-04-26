@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTD/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        macOS TCC usage descriptions.
+
+        Without these strings macOS *silently* denies access (no prompt, no
+        System Settings entry). With them, the OS prompts on first attempt
+        and remembers the grant under
+        System Settings → Privacy & Security → Files and Folders.
+
+        Tauri v2 auto-merges this file into the generated Info.plist at
+        bundle time — no tauri.conf.json change required.
+    -->
+
+    <!-- SMB / NFS / AFP shares mounted under /Volumes/ (macOS 13+). -->
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>metid needs access to network volumes so it can read and write metadata on files stored on NAS or other shared drives.</string>
+
+    <!-- USB / Thunderbolt / SD-card mounts under /Volumes/. -->
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>metid needs access to removable volumes so it can read and write metadata on files stored on external drives and memory cards.</string>
+
+    <!-- Protected user folders. Triggered when reading/writing files chosen
+         from the open-file dialog if the path is inside these directories. -->
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>metid needs access to your Desktop to read and write metadata on files you open from there.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>metid needs access to your Documents folder to read and write metadata on files you open from there.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>metid needs access to your Downloads folder to read and write metadata on files you open from there.</string>
+</dict>
+</plist>

@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Generated sidecar artifacts — recreated by scripts/bundle-mkvpropedit.sh
+src-tauri/mkvpropedit-aarch64-apple-darwin
+src-tauri/mkvpropedit-libs/

@@ -8,7 +8,16 @@ import {
   Lock, Plus, Search, Folder, Save, AlertCircle, X
 } from "lucide-react";
 import "./App.css";
-import { COMMON_TAGS } from "./constants";
+import {
+  COMMON_TAGS,
+  ALL_SUPPORTED_EXT,
+  IMAGE_EXT,
+  VIDEO_EXT,
+  AUDIO_EXT,
+  DOC_EXT,
+  categorizeFile,
+  hasWritableMetadata,
+} from "./constants";
 import { useSettings } from "./hooks/useSettings";
 import { SettingsView } from "./components/SettingsView";
 
@@ -26,11 +35,16 @@ type BulkSaveResult = { path: string; ok: boolean; error: ExifError | null };
 
 type Mode = "single" | "batch" | "settings";
 
-const MEDIA_EXT = [
-  "jpg", "jpeg", "png", "tiff", "tif", "heic", "heif", "webp",
-  "cr2", "cr3", "nef", "arw", "dng", "raf", "orf",
-  "mp4", "mov", "avi", "mkv", "m4v",
-  "mp3", "flac", "wav", "m4a", "ogg", "pdf",
+// Open-file dialog filters. "All Supported" leads, then per-category lists for
+// users who want to narrow down, then "All Files" as the escape hatch for any
+// extension ExifTool can read but we haven't enumerated.
+const DIALOG_FILTERS = [
+  { name: "All Supported", extensions: ALL_SUPPORTED_EXT },
+  { name: "Images",        extensions: IMAGE_EXT },
+  { name: "Videos",        extensions: VIDEO_EXT },
+  { name: "Audio",         extensions: AUDIO_EXT },
+  { name: "Documents",     extensions: DOC_EXT },
+  { name: "All Files",     extensions: ["*"] },
 ];
 
 const READ_ONLY_GROUPS = new Set([
@@ -108,64 +122,79 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100 font-sans selection:bg-blue-500/30">
+    <div className="relative flex h-screen w-screen overflow-hidden bg-transparent text-zinc-100 font-sans selection:bg-blue-500/30">
       <Toaster theme="dark" position="bottom-right" className="font-sans" />
-      
-      {/* Sidebar */}
-      <aside className="w-16 flex-shrink-0 flex flex-col items-center py-4 bg-zinc-950 border-r border-zinc-900/80 z-20">
-        <div className="mb-8 w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+
+      {/* Full-width drag region — absolutely positioned over the top of the window so it covers the
+          native macOS traffic light area while the sidebar and main panel extend behind it. */}
+      <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-10 z-30" />
+
+      {/* Sidebar — translucent glass panel.
+          - bg-zinc-950/40 + backdrop-blur-2xl + backdrop-saturate-[180%] lets the
+            desktop wallpaper bleed through with vibrancy (works because the window
+            itself has `transparent: true` in tauri.conf.json).
+          - The right-edge inset shadow simulates depth where the panel meets the
+            main content area. */}
+      <aside className="w-16 flex-shrink-0 flex flex-col items-center bg-zinc-950/40 backdrop-blur-2xl backdrop-saturate-[180%] border-r border-white/[0.08] shadow-[inset_-1px_0_0_0_rgba(255,255,255,0.05)] z-20">
+        {/* Spacer: matches the absolute drag-region overlay so no interactive
+            element sits under the traffic lights. */}
+        <div data-tauri-drag-region className="h-10 w-full flex-shrink-0" />
+
+        {/* Brand mark — mt-2 keeps it from feeling smashed under the spacer,
+            mb-10 sets the rhythm down to the first nav button. */}
+        <div className="mt-2 mb-10 w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
           <span className="font-bold text-white tracking-tighter text-lg">m</span>
         </div>
 
-        <nav className="flex flex-col gap-3 flex-1 w-full items-center">
+        {/* Primary nav — generous vertical breathing (24 px between buttons). */}
+        <nav className="flex flex-col space-y-6 flex-1 w-full items-center">
+          {/* Note: every button keeps a 1 px border slot (transparent when inactive)
+              so the icon doesn't shift 1 px on activation. */}
           <button
             onClick={() => setMode("single")}
             title="Single File"
-            className={`p-3 rounded-xl transition-all duration-200 ${
+            className={`p-3 rounded-xl border transition-all duration-200 ${
               mode === "single"
-                ? "bg-blue-500/10 text-blue-500"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900"
+                ? "bg-white/10 border-white/10 shadow-sm text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
+                : "border-transparent text-zinc-300 hover:text-white hover:bg-white/5"
             }`}
           >
-            <FileIcon size={22} strokeWidth={mode === "single" ? 2.5 : 2} />
+            <FileIcon size={22} strokeWidth={2} />
           </button>
           <button
             onClick={() => setMode("batch")}
             title="Batch Edit"
-            className={`p-3 rounded-xl transition-all duration-200 ${
+            className={`p-3 rounded-xl border transition-all duration-200 ${
               mode === "batch"
-                ? "bg-blue-500/10 text-blue-500"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900"
+                ? "bg-white/10 border-white/10 shadow-sm text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
+                : "border-transparent text-zinc-300 hover:text-white hover:bg-white/5"
             }`}
           >
-            <Grid size={22} strokeWidth={mode === "batch" ? 2.5 : 2} />
+            <Grid size={22} strokeWidth={2} />
           </button>
         </nav>
 
-        <div className="mt-auto">
+        {/* Bottom section — hairline separator + extra whitespace lifts
+            Settings out of the primary-nav rhythm. */}
+        <div className="w-full flex flex-col items-center pt-4 pb-5 border-t border-white/[0.08]">
           <button
             onClick={() => setMode("settings")}
             title="Settings"
-            className={`p-3 rounded-xl transition-all duration-200 ${
+            className={`p-3 rounded-xl border transition-all duration-200 ${
               mode === "settings"
-                ? "bg-blue-500/10 text-blue-500"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900"
+                ? "bg-white/10 border-white/10 shadow-sm text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
+                : "border-transparent text-zinc-300 hover:text-white hover:bg-white/5"
             }`}
           >
-            <Settings size={22} strokeWidth={mode === "settings" ? 2.5 : 2} />
+            <Settings size={22} strokeWidth={2} />
           </button>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 h-full relative">
-        {/* Titlebar draggable area */}
-        <div data-tauri-drag-region className="h-10 w-full flex-shrink-0 flex items-center px-4 border-b border-zinc-900/80 bg-zinc-950/80 backdrop-blur-md sticky top-0 z-50">
-          <span data-tauri-drag-region className="text-[10px] font-bold text-zinc-600 tracking-widest uppercase select-none">
-            metid
-          </span>
-        </div>
-
+      <main className="flex-1 flex flex-col min-w-0 relative bg-zinc-950">
+        {/* Spacer: matches drag region height — keeps content from hiding under traffic lights */}
+        <div className="h-10 w-full flex-shrink-0" />
         {/* Scrollable Container */}
         <div className="flex-1 overflow-y-auto p-6 lg:p-8 custom-scrollbar">
           <div className="mx-auto max-w-5xl">
@@ -255,10 +284,7 @@ function SingleFileView({
     try {
       const selected = await open({
         multiple: false,
-        filters: [
-          { name: "Media & Documents", extensions: MEDIA_EXT },
-          { name: "All Files", extensions: ["*"] },
-        ],
+        filters: DIALOG_FILTERS,
       });
       if (typeof selected !== "string") return;
       setFilePath(selected);
@@ -308,13 +334,18 @@ function SingleFileView({
     const writableEdits = Object.fromEntries(
       Object.entries(edits).filter(([k]) => isWritable(k)),
     );
-    if (Object.keys(writableEdits).length === 0) return;
-    
+    // Captured before loadMetadata() resets state — can't read dirtyCount after the await.
+    const savedCount = Object.keys(writableEdits).length;
+    if (savedCount === 0) return;
+
     setSaving(true);
     try {
       await saveFilesMetadata([filePath], writableEdits, keepBackups);
       await loadMetadata(filePath);
-      toast.success("Metadata saved successfully!");
+      toast.success("Metadata saved", {
+        description: `Updated ${savedCount} field${savedCount === 1 ? "" : "s"} in ${basename(filePath)}`,
+        duration: 4000,
+      });
     } catch (e) {
       const err = e as ExifError;
       toast.error("Failed to save changes", {
@@ -335,15 +366,40 @@ function SingleFileView({
     );
   }, [metadata]);
 
+  // Broad metadata category for the currently-open file ("image" / "video" /
+  // "audio" / "document"). Drives format-aware filtering of the tag picker.
+  // null = unknown extension; only universal tags are shown in that case.
+  const fileCategory = useMemo(
+    () => (filePath ? categorizeFile(filePath) : null),
+    [filePath],
+  );
+
+  // True when the loaded file is a plain-text format (.txt/.md/.rtf) with no
+  // internal metadata container. Drives the read-only banner + disables
+  // Save and Add Tag — attempting either returns `ToolError: exit Some(1)`
+  // from ExifTool, which we'd rather not even let the user trigger.
+  const isReadOnlyFormat = useMemo(
+    () => (filePath ? !hasWritableMetadata(filePath) : false),
+    [filePath],
+  );
+
   const pickerTags = useMemo(() => {
     const q = tagSearch.toLowerCase();
-    return COMMON_TAGS.filter(
-      (t) =>
-        !newTags.has(t.name) &&
-        !existingTagNames.has(t.name.toLowerCase()) &&
-        (q === "" || t.name.toLowerCase().includes(q) || t.hint.toLowerCase().includes(q)),
-    );
-  }, [existingTagNames, newTags, tagSearch]);
+    return COMMON_TAGS.filter((t) => {
+      if (newTags.has(t.name)) return false;
+      if (existingTagNames.has(t.name.toLowerCase())) return false;
+      // Format gate: tags without a `formats` array are universal. Tags with
+      // one only show for matching categories. Unknown extension (null
+      // category) only sees universal tags.
+      if (t.formats && (!fileCategory || !t.formats.includes(fileCategory))) {
+        return false;
+      }
+      if (q === "") return true;
+      return (
+        t.name.toLowerCase().includes(q) || t.hint.toLowerCase().includes(q)
+      );
+    });
+  }, [existingTagNames, newTags, tagSearch, fileCategory]);
 
   const entries = useMemo(() => {
     if (!metadata) return [];
@@ -389,7 +445,8 @@ function SingleFileView({
               </button>
               <button
                 onClick={save}
-                disabled={saving || dirtyCount === 0}
+                disabled={saving || dirtyCount === 0 || isReadOnlyFormat}
+                title={isReadOnlyFormat ? "This format has no internal metadata container" : undefined}
                 className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition-colors disabled:opacity-40 disabled:shadow-none"
               >
                 <Save size={16} />
@@ -414,6 +471,19 @@ function SingleFileView({
             <Folder size={18} />
             {loading ? "Reading…" : "Open File"}
           </button>
+        </div>
+      )}
+
+      {metadata && isReadOnlyFormat && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+          <Lock size={18} className="text-amber-400 shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="font-medium text-amber-200">Internal metadata not supported for this format (Read-only)</p>
+            <p className="text-amber-300/70 text-xs mt-1">
+              Plain-text files (.txt, .md, .rtf) have no metadata container. Filesystem
+              attributes are shown above for reference; Save and Add Tag are disabled.
+            </p>
+          </div>
         </div>
       )}
 
@@ -450,7 +520,9 @@ function SingleFileView({
             <div ref={tagPickerRef} className="relative ml-4">
               <button
                 onClick={() => setShowTagPicker((v) => !v)}
-                className="flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-800 px-5 py-2.5 text-sm font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors shadow-sm"
+                disabled={isReadOnlyFormat}
+                title={isReadOnlyFormat ? "This format has no internal metadata container" : undefined}
+                className="flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-800 px-5 py-2.5 text-sm font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-zinc-800 disabled:hover:text-zinc-200"
               >
                 <Plus size={16} /> Add Tag
               </button>
@@ -598,16 +670,34 @@ function BatchView({
   const [colPickerSearch, setColPickerSearch] = useState("");
   const colPickerRef = useRef<HTMLDivElement>(null);
 
+  // Shared category across the loaded batch — null when empty or mixed
+  // (mixed batches see every tag; format-gating only kicks in when every
+  // file shares a single category, e.g. a folder of MKVs or JPEGs).
+  const batchCategory = useMemo(() => {
+    if (items.length === 0) return null;
+    const cats = new Set(items.map((i) => categorizeFile(i.file_path)));
+    if (cats.size !== 1) return null;
+    return cats.values().next().value ?? null;
+  }, [items]);
+
   const filteredColTags = useMemo(
     () =>
-      COMMON_TAGS.filter(
-        (t) =>
-          !columns.includes(t.name) &&
-          (!colPickerSearch ||
-            t.name.toLowerCase().includes(colPickerSearch.toLowerCase()) ||
-            t.hint.toLowerCase().includes(colPickerSearch.toLowerCase())),
-      ),
-    [columns, colPickerSearch],
+      COMMON_TAGS.filter((t) => {
+        if (columns.includes(t.name)) return false;
+        // Same format gate as the single-file picker, applied only when the
+        // whole batch shares one category. Universal tags always pass.
+        if (
+          t.formats &&
+          batchCategory &&
+          !t.formats.includes(batchCategory)
+        ) {
+          return false;
+        }
+        if (!colPickerSearch) return true;
+        const q = colPickerSearch.toLowerCase();
+        return t.name.toLowerCase().includes(q) || t.hint.toLowerCase().includes(q);
+      }),
+    [columns, colPickerSearch, batchCategory],
   );
 
   const dirtyFileCount = Object.keys(edits).length;
@@ -662,10 +752,7 @@ function BatchView({
     try {
       const selected = await open({
         multiple: true,
-        filters: [
-          { name: "Media & Documents", extensions: MEDIA_EXT },
-          { name: "All Files", extensions: ["*"] },
-        ],
+        filters: DIALOG_FILTERS,
       });
       if (!Array.isArray(selected) || selected.length === 0) return;
 
@@ -751,6 +838,10 @@ function BatchView({
 
       if (fileUpdates.length === 0) return;
 
+      // Capture before the save — reading from `edits` after success would be stale
+      // (we call setEdits({}) below) and reading from results doesn't carry edit counts.
+      const totalEdits = fileUpdates.reduce((n, fu) => n + Object.keys(fu.updates).length, 0);
+
       const results: BulkSaveResult[] = await invoke("bulk_save_metadata", { fileUpdates, keepBackups });
       const failed = results.filter((r) => !r.ok);
 
@@ -765,7 +856,10 @@ function BatchView({
       }
 
       if (failed.length === 0) {
-        toast.success(`Saved changes to ${results.length} file${results.length === 1 ? "" : "s"}.`);
+        toast.success(`Saved ${results.length} file${results.length === 1 ? "" : "s"}`, {
+          description: `${totalEdits} edit${totalEdits === 1 ? "" : "s"} written.`,
+          duration: 4000,
+        });
       } else {
         toast.error(`Saved ${results.length - failed.length}/${results.length} files.`, {
           description: failed
