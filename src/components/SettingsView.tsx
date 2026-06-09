@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Monitor, Sun, Moon } from "lucide-react";
 import { COMMON_TAGS } from "../constants";
 import { Settings } from "../hooks/useSettings";
+import { Theme } from "../hooks/useTheme";
+
+const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
+  { value: "system", label: "System", icon: Monitor },
+  { value: "light", label: "Light", icon: Sun },
+  { value: "dark", label: "Dark", icon: Moon },
+];
 
 export function SettingsView({
   settings,
@@ -50,24 +57,55 @@ export function SettingsView({
   return (
     <section className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Settings</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">Settings</h1>
+        <p className="mt-1 text-sm text-fg-4">
           Preferences are saved automatically to local storage.
         </p>
       </div>
 
+      {/* ── Appearance ── */}
+      <div className="rounded-2xl border border-line bg-panel p-6">
+        <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-fg-4">
+          Appearance
+        </h2>
+        <p className="mb-5 text-xs text-fg-4">
+          Choose a theme, or follow your operating system setting automatically.
+        </p>
+
+        <div className="inline-flex w-full max-w-sm gap-1 rounded-xl border border-line bg-app p-1">
+          {THEME_OPTIONS.map(({ value, label, icon: Icon }) => {
+            const active = settings.theme === value;
+            return (
+              <button
+                key={value}
+                onClick={() => onUpdate({ theme: value })}
+                aria-pressed={active}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  active
+                    ? "bg-panel text-fg shadow-sm border border-line"
+                    : "border border-transparent text-fg-4 hover:text-fg"
+                }`}
+              >
+                <Icon size={15} strokeWidth={2} />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* ── File Safety ── */}
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
-        <h2 className="mb-5 text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+      <div className="rounded-2xl border border-line bg-panel p-6">
+        <h2 className="mb-5 text-[11px] font-semibold uppercase tracking-widest text-fg-4">
           File Safety
         </h2>
 
         <div className="flex items-start justify-between gap-8">
           <div className="min-w-0">
-            <p className="text-sm font-medium text-zinc-100">Keep original file backups</p>
-            <p className="mt-1.5 text-xs text-zinc-500 leading-relaxed max-w-sm">
+            <p className="text-sm font-medium text-fg">Keep original file backups</p>
+            <p className="mt-1.5 text-xs text-fg-4 leading-relaxed max-w-sm">
               When enabled, ExifTool creates a{" "}
-              <code className="rounded bg-zinc-800 px-1 py-0.5 font-mono text-zinc-300">
+              <code className="rounded bg-elevated px-1 py-0.5 font-mono text-fg-2">
                 _original
               </code>{" "}
               backup beside each file before writing. Disable to overwrite files directly and
@@ -82,7 +120,7 @@ export function SettingsView({
             aria-checked={settings.keepBackups}
             onClick={() => onUpdate({ keepBackups: !settings.keepBackups })}
             className={`relative mt-0.5 inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-zinc-900 ${
-              settings.keepBackups ? "bg-blue-600" : "bg-zinc-700"
+              settings.keepBackups ? "bg-blue-600" : "bg-elevated2"
             }`}
           >
             <span
@@ -95,11 +133,11 @@ export function SettingsView({
       </div>
 
       {/* ── Default Batch Columns ── */}
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
-        <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+      <div className="rounded-2xl border border-line bg-panel p-6">
+        <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-fg-4">
           Default Batch Columns
         </h2>
-        <p className="mb-5 text-xs text-zinc-500">
+        <p className="mb-5 text-xs text-fg-4">
           Columns shown by default when opening Batch Edit. You can always add or remove columns
           per session.
         </p>
@@ -108,12 +146,12 @@ export function SettingsView({
           {settings.defaultBatchColumns.map((col) => (
             <span
               key={col}
-              className="flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 font-mono text-xs text-zinc-200"
+              className="flex items-center gap-1.5 rounded-full border border-line-strong bg-elevated px-3 py-1 font-mono text-xs text-fg"
             >
               {col}
               <button
                 onClick={() => removeColumn(col)}
-                className="text-zinc-500 hover:text-red-400 transition-colors"
+                className="text-fg-4 hover:text-red-400 transition-colors"
                 title={`Remove ${col}`}
               >
                 <X size={11} />
@@ -125,36 +163,36 @@ export function SettingsView({
           <div ref={colPickerRef} className="relative">
             <button
               onClick={() => { setShowColPicker((v) => !v); setColPickerSearch(""); }}
-              className="flex items-center gap-1.5 rounded-full border border-dashed border-zinc-700 px-3 py-1 text-xs text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 transition-colors"
+              className="flex items-center gap-1.5 rounded-full border border-dashed border-line-strong px-3 py-1 text-xs text-fg-4 hover:border-line-strong hover:text-fg-2 transition-colors"
             >
               <Plus size={11} />
               Add
             </button>
 
             {showColPicker && (
-              <div className="absolute left-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/50">
-                <div className="border-b border-zinc-800 p-2">
+              <div className="absolute left-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-xl border border-line-strong bg-panel shadow-2xl shadow-black/50">
+                <div className="border-b border-line p-2">
                   <input
                     type="text"
                     autoFocus
                     value={colPickerSearch}
                     onChange={(e) => setColPickerSearch(e.target.value)}
                     placeholder="Search tags…"
-                    className="w-full rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:ring-2 focus:ring-blue-500/30"
+                    className="w-full rounded-lg bg-elevated px-3 py-1.5 text-xs text-fg placeholder-fg-4 outline-none focus:ring-2 focus:ring-blue-500/30"
                   />
                 </div>
                 <div className="max-h-48 overflow-y-auto py-1 custom-scrollbar">
                   {filteredColTags.length === 0 ? (
-                    <p className="px-3 py-2 text-xs text-zinc-500">All tags added</p>
+                    <p className="px-3 py-2 text-xs text-fg-4">All tags added</p>
                   ) : (
                     filteredColTags.map((t) => (
                       <button
                         key={t.name}
                         onClick={() => addColumn(t.name)}
-                        className="w-full px-3 py-2 text-left transition-colors hover:bg-zinc-800"
+                        className="w-full px-3 py-2 text-left transition-colors hover:bg-elevated"
                       >
-                        <span className="block font-mono text-xs text-zinc-200">{t.name}</span>
-                        <span className="block text-[10px] text-zinc-500">{t.hint}</span>
+                        <span className="block font-mono text-xs text-fg">{t.name}</span>
+                        <span className="block text-[10px] text-fg-4">{t.hint}</span>
                       </button>
                     ))
                   )}
@@ -164,7 +202,7 @@ export function SettingsView({
           </div>
 
           {settings.defaultBatchColumns.length === 0 && (
-            <span className="text-xs text-zinc-600 italic">No default columns — add one above.</span>
+            <span className="text-xs text-fg-5 italic">No default columns — add one above.</span>
           )}
         </div>
       </div>

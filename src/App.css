@@ -1,5 +1,78 @@
 @import "tailwindcss";
 
+/* Drive the `dark:` variant off our `.dark` class (toggled on <html> by the
+   theme hook) instead of the OS media query, so the in-app theme switch — and
+   its "system" override — stays authoritative. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Semantic color tokens
+
+   The whole UI is painted with role-based tokens (panel, elevated, fg, line…)
+   instead of raw zinc shades, so a single theme swap repaints everything. The
+   actual values live in :root (light) and .dark (dark) below; `@theme inline`
+   wires each Tailwind color utility to the live CSS variable so it flips at
+   runtime when the `.dark` class is toggled on <html>.
+
+   Accent colors (blue/emerald/amber/red) are intentionally NOT tokenized —
+   they read well on both light and dark surfaces via their opacity tints.
+   ────────────────────────────────────────────────────────────────────────── */
+@theme inline {
+  --color-app: var(--app);                 /* window / main background          */
+  --color-panel: var(--panel);             /* cards, sidebar, dropdowns         */
+  --color-elevated: var(--elevated);       /* secondary buttons, inset boxes    */
+  --color-elevated2: var(--elevated2);     /* hover of elevated, scrollbar thumb*/
+  --color-line: var(--line);               /* default hairline borders          */
+  --color-line-strong: var(--line-strong); /* stronger / hover borders          */
+  --color-fg: var(--fg);                   /* primary text                      */
+  --color-fg-2: var(--fg-2);               /* strong secondary text             */
+  --color-fg-3: var(--fg-3);               /* muted text                        */
+  --color-fg-4: var(--fg-4);               /* subtle text / placeholders        */
+  --color-fg-5: var(--fg-5);               /* faint text                        */
+  --color-fg-6: var(--fg-6);               /* faintest text / disabled icons    */
+  --color-ovl: var(--ovl);                 /* glass highlight overlay (flips)   */
+  --color-inverted: var(--inverted);       /* high-contrast CTA fill            */
+  --color-on-inverted: var(--on-inverted); /* text on the CTA fill              */
+}
+
+/* Light theme (default) */
+:root {
+  --app: #fafafa;
+  --panel: #ffffff;
+  --elevated: #f1f1f4;
+  --elevated2: #e4e4e7;
+  --line: #e4e4e7;
+  --line-strong: #d4d4d8;
+  --fg: #18181b;
+  --fg-2: #27272a;
+  --fg-3: #52525b;
+  --fg-4: #71717a;
+  --fg-5: #a1a1aa;
+  --fg-6: #d4d4d8;
+  --ovl: #000000;
+  --inverted: #18181b;
+  --on-inverted: #ffffff;
+}
+
+/* Dark theme */
+.dark {
+  --app: #09090b;
+  --panel: #18181b;
+  --elevated: #27272a;
+  --elevated2: #3f3f46;
+  --line: #27272a;
+  --line-strong: #3f3f46;
+  --fg: #f4f4f5;
+  --fg-2: #e4e4e7;
+  --fg-3: #a1a1aa;
+  --fg-4: #71717a;
+  --fg-5: #52525b;
+  --fg-6: #3f3f46;
+  --ovl: #ffffff;
+  --inverted: #ffffff;
+  --on-inverted: #18181b;
+}
+
 @layer utilities {
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
@@ -9,9 +82,10 @@
     background: transparent;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    @apply bg-zinc-800 rounded-full;
+    background: var(--elevated2);
+    border-radius: 9999px;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    @apply bg-zinc-700;
+    background: var(--fg-5);
   }
 }

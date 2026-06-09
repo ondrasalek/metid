@@ -5,6 +5,23 @@
     <link rel="icon" type="image/png" href="/icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Metid</title>
+    <!-- Apply the saved theme before first paint to avoid a light/dark flash.
+         Mirrors the resolution logic in src/hooks/useTheme.ts. -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem("metid_settings_v1");
+          var theme = raw ? JSON.parse(raw).theme : "system";
+          if (theme !== "light" && theme !== "dark") {
+            theme = window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+          }
+          document.documentElement.classList.toggle("dark", theme === "dark");
+          document.documentElement.style.colorScheme = theme;
+        } catch (e) {}
+      })();
+    </script>
   </head>
 
   <body>

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, confirm } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Toaster, toast } from "sonner";
 import {
   FileIcon, FileImage, Settings, Grid, Trash2,
-  Lock, Plus, Search, Folder, Save, AlertCircle, X
+  Lock, Plus, Search, Folder, Save, AlertCircle, X, RotateCcw
 } from "lucide-react";
 import "./App.css";
 import {
@@ -19,6 +19,8 @@ import {
   hasWritableMetadata,
 } from "./constants";
 import { useSettings } from "./hooks/useSettings";
+import { useCmdKey, MOD_LABEL } from "./hooks/useHotkeys";
+import { useApplyTheme, resolveTheme, ResolvedTheme } from "./hooks/useTheme";
 import { SettingsView } from "./components/SettingsView";
 
 type Metadata = Record<string, unknown>;
@@ -73,6 +75,18 @@ function containsTemplate(value: string): boolean {
   return /\{[^}]+\}/.test(value);
 }
 
+// Native confirmation shown before an action would silently throw away unsaved
+// edits (switching mode, opening other files, quitting). Resolves true when the
+// user chooses to discard.
+async function confirmDiscard(message: string): Promise<boolean> {
+  return confirm(message, {
+    title: "Unsaved changes",
+    kind: "warning",
+    okLabel: "Discard",
+    cancelLabel: "Keep editing",
+  });
+}
+
 function resolveVariables(template: string, filePath: string): string {
   const full = basename(filePath);
   const dotIdx = full.lastIndexOf(".");
@@ -102,6 +116,44 @@ export default function App() {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [pendingDropPaths, setPendingDropPaths] = useState<string[] | null>(null);
   const { settings, updateSettings } = useSettings();
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
+    resolveTheme(settings.theme),
+  );
+  useApplyTheme(settings.theme, setResolvedTheme);
+
+  // Unsaved-edit tracking, lifted out of the views so the sidebar and the
+  // window-close handler can guard against silent data loss. The ref mirrors
+  // the state for the close listener, which is registered once.
+  const [dirty, setDirty] = useState(false);
+  const dirtyRef = useRef(dirty);
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+
+  async function switchMode(next: Mode) {
+    if (next === mode) return;
+    if (dirty && !(await confirmDiscard("Switching views will discard your unsaved changes."))) {
+      return;
+    }
+    setMode(next);
+  }
+
+  // Intercept the OS close request while edits are pending. WebviewWindow
+  // surfaces onCloseRequested; we preventDefault and re-issue the close only
+  // after the user confirms.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const win = getCurrentWebviewWindow();
+    win
+      .onCloseRequested(async (event) => {
+        if (!dirtyRef.current) return;
+        event.preventDefault();
+        if (await confirmDiscard("You have unsaved changes. Quit anyway?")) {
+          unlisten?.();
+          await win.destroy();
+        }
+      })
+      .then((fn) => { unlisten = fn; });
+    return () => unlisten?.();
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -122,20 +174,20 @@ export default function App() {
   }, []);
 
   return (
-    <div className="relative flex h-screen w-screen overflow-hidden bg-transparent text-zinc-100 font-sans selection:bg-blue-500/30">
-      <Toaster theme="dark" position="bottom-right" className="font-sans" />
+    <div className="relative flex h-screen w-screen overflow-hidden bg-transparent text-fg font-sans selection:bg-blue-500/30">
+      <Toaster theme={resolvedTheme} position="bottom-right" className="font-sans" />
 
       {/* Full-width drag region — absolutely positioned over the top of the window so it covers the
           native macOS traffic light area while the sidebar and main panel extend behind it. */}
       <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-10 z-30" />
 
       {/* Sidebar — translucent glass panel.
-          - bg-zinc-950/40 + backdrop-blur-2xl + backdrop-saturate-[180%] lets the
+          - bg-app/40 + backdrop-blur-2xl + backdrop-saturate-[180%] lets the
             desktop wallpaper bleed through with vibrancy (works because the window
             itself has `transparent: true` in tauri.conf.json).
           - The right-edge inset shadow simulates depth where the panel meets the
             main content area. */}
-      <aside className="w-16 flex-shrink-0 flex flex-col items-center bg-zinc-950/40 backdrop-blur-2xl backdrop-saturate-[180%] border-r border-white/[0.08] shadow-[inset_-1px_0_0_0_rgba(255,255,255,0.05)] z-20">
+      <aside className="w-16 flex-shrink-0 flex flex-col items-center bg-app/60 backdrop-blur-2xl backdrop-saturate-[180%] border-r border-ovl/[0.08] shadow-[inset_-1px_0_0_0_rgba(255,255,255,0.05)] z-20">
         {/* Spacer: matches the absolute drag-region overlay so no interactive
             element sits under the traffic lights. */}
         <div data-tauri-drag-region className="h-10 w-full flex-shrink-0" />
@@ -151,23 +203,23 @@ export default function App() {
           {/* Note: every button keeps a 1 px border slot (transparent when inactive)
               so the icon doesn't shift 1 px on activation. */}
           <button
-            onClick={() => setMode("single")}
+            onClick={() => switchMode("single")}
             title="Single File"
             className={`p-3 rounded-xl border transition-all duration-200 ${
               mode === "single"
-                ? "bg-white/10 border-white/10 shadow-sm text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
-                : "border-transparent text-zinc-300 hover:text-white hover:bg-white/5"
+                ? "bg-ovl/10 border-ovl/10 shadow-sm text-fg drop-shadow-[0_0_8px_rgba(0,0,0,0.15)] dark:drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
+                : "border-transparent text-fg-2 hover:text-fg hover:bg-ovl/5"
             }`}
           >
             <FileIcon size={22} strokeWidth={2} />
           </button>
           <button
-            onClick={() => setMode("batch")}
+            onClick={() => switchMode("batch")}
             title="Batch Edit"
             className={`p-3 rounded-xl border transition-all duration-200 ${
               mode === "batch"
-                ? "bg-white/10 border-white/10 shadow-sm text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
-                : "border-transparent text-zinc-300 hover:text-white hover:bg-white/5"
+                ? "bg-ovl/10 border-ovl/10 shadow-sm text-fg drop-shadow-[0_0_8px_rgba(0,0,0,0.15)] dark:drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
+                : "border-transparent text-fg-2 hover:text-fg hover:bg-ovl/5"
             }`}
           >
             <Grid size={22} strokeWidth={2} />
@@ -176,14 +228,14 @@ export default function App() {
 
         {/* Bottom section — hairline separator + extra whitespace lifts
             Settings out of the primary-nav rhythm. */}
-        <div className="w-full flex flex-col items-center pt-4 pb-5 border-t border-white/[0.08]">
+        <div className="w-full flex flex-col items-center pt-4 pb-5 border-t border-ovl/[0.08]">
           <button
-            onClick={() => setMode("settings")}
+            onClick={() => switchMode("settings")}
             title="Settings"
             className={`p-3 rounded-xl border transition-all duration-200 ${
               mode === "settings"
-                ? "bg-white/10 border-white/10 shadow-sm text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
-                : "border-transparent text-zinc-300 hover:text-white hover:bg-white/5"
+                ? "bg-ovl/10 border-ovl/10 shadow-sm text-fg drop-shadow-[0_0_8px_rgba(0,0,0,0.15)] dark:drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
+                : "border-transparent text-fg-2 hover:text-fg hover:bg-ovl/5"
             }`}
           >
             <Settings size={22} strokeWidth={2} />
@@ -192,7 +244,7 @@ export default function App() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 relative bg-zinc-950">
+      <main className="flex-1 flex flex-col min-w-0 relative bg-app">
         {/* Spacer: matches drag region height — keeps content from hiding under traffic lights */}
         <div className="h-10 w-full flex-shrink-0" />
         {/* Scrollable Container */}
@@ -203,6 +255,7 @@ export default function App() {
                 keepBackups={settings.keepBackups}
                 droppedFiles={pendingDropPaths}
                 onDropHandled={() => setPendingDropPaths(null)}
+                onDirtyChange={setDirty}
               />
             ) : mode === "batch" ? (
               <BatchView
@@ -210,6 +263,7 @@ export default function App() {
                 defaultColumns={settings.defaultBatchColumns}
                 droppedFiles={pendingDropPaths}
                 onDropHandled={() => setPendingDropPaths(null)}
+                onDirtyChange={setDirty}
               />
             ) : (
               <SettingsView settings={settings} onUpdate={updateSettings} />
@@ -219,11 +273,11 @@ export default function App() {
 
         {/* Drag-over overlay (not shown in settings mode) */}
         {isDraggingOver && mode !== "settings" && (
-          <div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 rounded-none bg-zinc-950/80 backdrop-blur-sm">
+          <div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 rounded-none bg-app/80 backdrop-blur-sm">
             <div className="rounded-2xl border-2 border-dashed border-blue-500/60 bg-blue-500/5 px-16 py-12 text-center shadow-2xl">
               <div className="mb-2 text-4xl">⬇</div>
-              <p className="text-lg font-semibold text-blue-300">Drop files to load</p>
-              <p className="mt-1 text-sm text-zinc-400">
+              <p className="text-lg font-semibold text-blue-600 dark:text-blue-300">Drop files to load</p>
+              <p className="mt-1 text-sm text-fg-3">
                 {mode === "single" ? "First file will be opened" : "All files will be added to selection"}
               </p>
             </div>
@@ -240,10 +294,12 @@ function SingleFileView({
   keepBackups,
   droppedFiles,
   onDropHandled,
+  onDirtyChange,
 }: {
   keepBackups: boolean;
   droppedFiles?: string[] | null;
   onDropHandled?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [filePath, setFilePath] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<Metadata | null>(null);
@@ -263,9 +319,15 @@ function SingleFileView({
   useEffect(() => {
     if (!droppedFiles?.length) return;
     const path = droppedFiles[0];
-    setFilePath(path);
-    loadMetadata(path);
-    onDropHandled?.();
+    (async () => {
+      if (hasPending && !(await confirmDiscard("Opening another file will discard your unsaved changes."))) {
+        onDropHandled?.();
+        return;
+      }
+      setFilePath(path);
+      await loadMetadata(path);
+      onDropHandled?.();
+    })();
   }, [droppedFiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -281,6 +343,9 @@ function SingleFileView({
   }, [showTagPicker]);
 
   async function pickAndRead() {
+    if (hasPending && !(await confirmDiscard("Opening another file will discard your unsaved changes."))) {
+      return;
+    }
     try {
       const selected = await open({
         multiple: false,
@@ -327,6 +392,11 @@ function SingleFileView({
     setNewTags((prev) => new Set(prev).add(name));
     setShowTagPicker(false);
     setTagSearch("");
+  }
+
+  function discard() {
+    setEdits({});
+    setNewTags(new Set());
   }
 
   async function save() {
@@ -420,25 +490,59 @@ function SingleFileView({
     return [...existing, ...added];
   }, [metadata, filter, editableOnly, newTags]);
 
+  const hasPending = dirtyCount > 0 || newTags.size > 0;
+  // True when the user filtered/added nothing matched — used to show a
+  // "no results" hint instead of a blank gap below the toolbar.
+  const noMatches = metadata !== null && entries.length === 0;
+
+  // Report pending edits to the parent (sidebar + quit guards); clear on unmount.
+  useEffect(() => {
+    onDirtyChange?.(hasPending);
+    return () => onDirtyChange?.(false);
+  }, [hasPending]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useCmdKey({
+    o: (e) => {
+      e.preventDefault();
+      if (!loading && !saving) pickAndRead();
+    },
+    s: (e) => {
+      e.preventDefault();
+      if (!saving && dirtyCount > 0 && !isReadOnlyFormat) save();
+    },
+  });
+
   return (
     <section>
       {filePath && (
-        <div className="mb-8 p-6 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-between shadow-sm">
+        <div className="mb-8 p-6 rounded-2xl bg-panel border border-line flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-5 overflow-hidden">
-            <div className="h-14 w-14 flex-shrink-0 bg-zinc-800/80 rounded-xl flex items-center justify-center border border-zinc-700/50 shadow-inner">
-              <FileImage size={28} className="text-zinc-400" />
+            <div className="h-14 w-14 flex-shrink-0 bg-elevated/80 rounded-xl flex items-center justify-center border border-line-strong/50 shadow-inner">
+              <FileImage size={28} className="text-fg-3" />
             </div>
             <div className="min-w-0 pr-4">
-              <h2 className="text-lg font-semibold text-zinc-100 truncate tracking-tight">{basename(filePath)}</h2>
-              <p className="text-xs text-zinc-500 truncate mt-1 font-mono">{filePath}</p>
+              <h2 className="text-lg font-semibold text-fg truncate tracking-tight">{basename(filePath)}</h2>
+              <p className="text-xs text-fg-4 truncate mt-1 font-mono">{filePath}</p>
             </div>
           </div>
           
           <div className="flex-shrink-0 ml-4 flex gap-3">
+              {hasPending && (
+                <button
+                  onClick={discard}
+                  disabled={saving}
+                  title="Discard unsaved changes"
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-fg-3 hover:bg-elevated hover:text-fg transition-colors disabled:opacity-50"
+                >
+                  <RotateCcw size={16} />
+                  Discard
+                </button>
+              )}
               <button
                 onClick={pickAndRead}
                 disabled={loading || saving}
-                className="flex items-center gap-2 rounded-lg bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors disabled:opacity-50"
+                title={`Open file (${MOD_LABEL}O)`}
+                className="flex items-center gap-2 rounded-lg bg-elevated px-4 py-2 text-sm font-medium text-fg-2 hover:bg-elevated2 hover:text-fg transition-colors disabled:opacity-50"
               >
                 <Folder size={16} />
                 {loading ? "Reading…" : "Open File"}
@@ -446,7 +550,7 @@ function SingleFileView({
               <button
                 onClick={save}
                 disabled={saving || dirtyCount === 0 || isReadOnlyFormat}
-                title={isReadOnlyFormat ? "This format has no internal metadata container" : undefined}
+                title={isReadOnlyFormat ? "This format has no internal metadata container" : `Save changes (${MOD_LABEL}S)`}
                 className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition-colors disabled:opacity-40 disabled:shadow-none"
               >
                 <Save size={16} />
@@ -457,16 +561,16 @@ function SingleFileView({
       )}
 
       {!filePath && (
-        <div className="flex flex-col items-center justify-center py-32 mt-12 text-center rounded-3xl border border-dashed border-zinc-800 bg-zinc-900/30">
-          <div className="w-20 h-20 rounded-2xl bg-zinc-800/80 flex items-center justify-center mb-6 text-zinc-400 shadow-inner border border-zinc-700/50">
+        <div className="flex flex-col items-center justify-center py-32 mt-12 text-center rounded-3xl border border-dashed border-line bg-panel/30">
+          <div className="w-20 h-20 rounded-2xl bg-elevated/80 flex items-center justify-center mb-6 text-fg-3 shadow-inner border border-line-strong/50">
             <FileImage size={36} strokeWidth={1.5} />
           </div>
-          <h3 className="text-xl font-medium text-zinc-200 mb-2 tracking-tight">No file selected</h3>
-          <p className="text-zinc-500 max-w-sm mb-8 text-sm">Select a media file or document to inspect and edit its metadata.</p>
+          <h3 className="text-xl font-medium text-fg mb-2 tracking-tight">No file selected</h3>
+          <p className="text-fg-4 max-w-sm mb-8 text-sm">Select a media file or document to inspect and edit its metadata.</p>
           <button
             onClick={pickAndRead}
             disabled={loading}
-            className="flex items-center gap-2 rounded-xl bg-white px-8 py-3 text-sm font-medium text-zinc-900 hover:bg-zinc-200 transition-all shadow-lg hover:shadow-xl active:scale-95"
+            className="flex items-center gap-2 rounded-xl bg-inverted px-8 py-3 text-sm font-medium text-on-inverted hover:bg-inverted/85 transition-all shadow-lg hover:shadow-xl active:scale-95"
           >
             <Folder size={18} />
             {loading ? "Reading…" : "Open File"}
@@ -478,8 +582,8 @@ function SingleFileView({
         <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
           <Lock size={18} className="text-amber-400 shrink-0 mt-0.5" />
           <div className="text-sm">
-            <p className="font-medium text-amber-200">Internal metadata not supported for this format (Read-only)</p>
-            <p className="text-amber-300/70 text-xs mt-1">
+            <p className="font-medium text-amber-700 dark:text-amber-200">Internal metadata not supported for this format (Read-only)</p>
+            <p className="text-amber-700/80 dark:text-amber-300/70 text-xs mt-1">
               Plain-text files (.txt, .md, .rtf) have no metadata container. Filesystem
               attributes are shown above for reference; Save and Add Tag are disabled.
             </p>
@@ -492,16 +596,16 @@ function SingleFileView({
           <div className="mb-6 flex items-center justify-between">
             <div className="flex items-center gap-4 flex-1 max-w-md">
               <div className="relative w-full">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-4" />
                 <input
                   type="search"
                   placeholder="Filter tags…"
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 pl-10 pr-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-500 focus:border-blue-500/50 focus:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+                  className="w-full rounded-xl border border-line bg-panel/50 pl-10 pr-4 py-2.5 text-sm text-fg placeholder-fg-4 focus:border-blue-500/50 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                 />
               </div>
-              <label className="flex shrink-0 select-none items-center gap-2.5 text-sm text-zinc-400 cursor-pointer hover:text-zinc-200 transition-colors">
+              <label className="flex shrink-0 select-none items-center gap-2.5 text-sm text-fg-3 cursor-pointer hover:text-fg transition-colors">
                 <div className="relative flex items-center">
                   <input
                     type="checkbox"
@@ -509,7 +613,7 @@ function SingleFileView({
                     onChange={(e) => setEditableOnly(e.target.checked)}
                     className="peer sr-only"
                   />
-                  <div className="h-5 w-5 rounded border border-zinc-700 bg-zinc-900 peer-focus:ring-2 peer-focus:ring-blue-500/30 peer-checked:bg-blue-600 peer-checked:border-blue-600 transition-colors"></div>
+                  <div className="h-5 w-5 rounded border border-line-strong bg-panel peer-focus:ring-2 peer-focus:ring-blue-500/30 peer-checked:bg-blue-600 peer-checked:border-blue-600 transition-colors"></div>
                   <svg className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </div>
                 Editable only
@@ -522,28 +626,28 @@ function SingleFileView({
                 onClick={() => setShowTagPicker((v) => !v)}
                 disabled={isReadOnlyFormat}
                 title={isReadOnlyFormat ? "This format has no internal metadata container" : undefined}
-                className="flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-800 px-5 py-2.5 text-sm font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-zinc-800 disabled:hover:text-zinc-200"
+                className="flex items-center gap-2 rounded-xl border border-line-strong bg-elevated px-5 py-2.5 text-sm font-medium text-fg hover:bg-elevated2 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-elevated disabled:hover:text-fg"
               >
                 <Plus size={16} /> Add Tag
               </button>
               {showTagPicker && (
-                <div className="absolute right-0 top-full z-20 mt-2 w-72 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl shadow-black/60">
-                  <div className="border-b border-zinc-800 p-2 bg-zinc-900">
+                <div className="absolute right-0 top-full z-20 mt-2 w-72 overflow-hidden rounded-xl border border-line bg-panel shadow-2xl shadow-black/60">
+                  <div className="border-b border-line p-2 bg-panel">
                     <div className="relative">
-                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-4" />
                       <input
                         autoFocus
                         type="search"
                         value={tagSearch}
                         onChange={(e) => setTagSearch(e.target.value)}
                         placeholder="Search tags…"
-                        className="w-full rounded-lg border border-zinc-800 bg-zinc-950 pl-9 pr-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                        className="w-full rounded-lg border border-line bg-app pl-9 pr-3 py-2 text-sm text-fg placeholder-fg-4 focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
                       />
                     </div>
                   </div>
                   <ul className="max-h-64 overflow-y-auto py-1 custom-scrollbar">
                     {pickerTags.length === 0 ? (
-                      <li className="px-4 py-6 text-sm text-zinc-500 text-center">
+                      <li className="px-4 py-6 text-sm text-fg-4 text-center">
                         All common tags already present
                       </li>
                     ) : (
@@ -551,12 +655,12 @@ function SingleFileView({
                         <li key={t.name}>
                           <button
                             onClick={() => addTag(t.name)}
-                            className="w-full px-4 py-2.5 text-left hover:bg-zinc-800 transition-colors flex flex-col gap-1"
+                            className="w-full px-4 py-2.5 text-left hover:bg-elevated transition-colors flex flex-col gap-1"
                           >
-                            <span className="font-mono text-sm font-medium text-zinc-200">
+                            <span className="font-mono text-sm font-medium text-fg">
                               {t.name}
                             </span>
-                            <span className="text-xs text-zinc-500">
+                            <span className="text-xs text-fg-4">
                               {t.hint}
                             </span>
                           </button>
@@ -584,16 +688,16 @@ function SingleFileView({
                       ? "bg-blue-500/5 hover:bg-blue-500/10"
                       : isNew
                         ? "bg-emerald-500/5 hover:bg-emerald-500/10 border-l-2 border-l-emerald-500 pl-3.5"
-                        : "bg-zinc-900/30 hover:bg-zinc-900"
+                        : "bg-panel/30 hover:bg-panel"
                   }`}
                 >
                   <div className="w-[30%] shrink-0 flex items-center gap-2">
-                    {!writable && <Lock size={14} className="text-zinc-600 shrink-0" />}
-                    <span className="font-mono text-sm text-zinc-400 truncate tracking-tight" title={key}>
+                    {!writable && <Lock size={14} className="text-fg-5 shrink-0" />}
+                    <span className="font-mono text-sm text-fg-3 truncate tracking-tight" title={key}>
                       {key}
                     </span>
                     {isNew && (
-                      <span className="ml-2 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-emerald-400 border border-emerald-500/20">
+                      <span className="ml-2 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                         New
                       </span>
                     )}
@@ -608,12 +712,12 @@ function SingleFileView({
                       value={display}
                       onChange={(e) => setEdit(key, e.target.value)}
                       placeholder={isNew ? "Enter value…" : undefined}
-                      className={`w-full rounded-lg bg-zinc-900/80 border ${
+                      className={`w-full rounded-lg bg-panel/80 border ${
                         isDirty 
-                          ? "border-blue-500/30 text-blue-100 focus:border-blue-500" 
-                          : isNew 
-                            ? "border-emerald-500/30 text-emerald-100 focus:border-emerald-500 placeholder-emerald-700/50" 
-                            : "border-zinc-800 text-zinc-200 focus:border-blue-500/50"
+                          ? "border-blue-500/30 text-blue-700 dark:text-blue-100 focus:border-blue-500"
+                          : isNew
+                            ? "border-emerald-500/30 text-emerald-700 dark:text-emerald-100 focus:border-emerald-500 placeholder-emerald-600/40 dark:placeholder-emerald-700/50"
+                            : "border-line text-fg focus:border-blue-500/50"
                       } px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 disabled:bg-transparent disabled:border-transparent transition-all shadow-sm`}
                     />
                     {isNew && (
@@ -629,7 +733,7 @@ function SingleFileView({
                              return rest;
                            });
                         }}
-                        className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        className="p-2 text-fg-4 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
                         title="Remove tag"
                       >
                         <Trash2 size={16} />
@@ -640,6 +744,25 @@ function SingleFileView({
               );
             })}
           </div>
+
+          {noMatches && (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <Search size={28} className="text-fg-6 mb-3" strokeWidth={1.5} />
+              <p className="text-sm text-fg-3">
+                {editableOnly && !filter
+                  ? "No editable tags in this file"
+                  : "No tags match your filter"}
+              </p>
+              {(filter || editableOnly) && (
+                <button
+                  onClick={() => { setFilter(""); setEditableOnly(false); }}
+                  className="mt-3 text-xs font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          )}
         </>
       )}
     </section>
@@ -653,11 +776,13 @@ function BatchView({
   defaultColumns,
   droppedFiles,
   onDropHandled,
+  onDirtyChange,
 }: {
   keepBackups: boolean;
   defaultColumns: string[];
   droppedFiles?: string[] | null;
   onDropHandled?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [items, setItems] = useState<BatchItem[]>([]);
   const [edits, setEdits] = useState<Record<string, Record<string, string>>>({});
@@ -706,6 +831,12 @@ function BatchView({
     0,
   );
 
+  // Report pending edits to the parent (sidebar + quit guards); clear on unmount.
+  useEffect(() => {
+    onDirtyChange?.(dirtyFileCount > 0);
+    return () => onDirtyChange?.(false);
+  }, [dirtyFileCount]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Close column picker on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -749,6 +880,9 @@ function BatchView({
   }
 
   async function pickFiles() {
+    if (dirtyFileCount > 0 && !(await confirmDiscard("Selecting new files will discard your unsaved changes."))) {
+      return;
+    }
     try {
       const selected = await open({
         multiple: true,
@@ -875,25 +1009,56 @@ function BatchView({
     }
   }
 
+  function discardAll() {
+    setEdits({});
+  }
+
+  useCmdKey({
+    o: (e) => {
+      e.preventDefault();
+      if (!loading && !saving) pickFiles();
+    },
+    s: (e) => {
+      e.preventDefault();
+      if (!saving && dirtyFileCount > 0) saveAll();
+    },
+  });
+
   return (
     <section>
       <div className="mb-6 flex items-center justify-between">
-        <div className="text-sm text-zinc-400">
+        <div className="text-sm text-fg-3">
           {items.length > 0 ? (
             <span className="flex items-center gap-2">
-               <span className="font-medium text-zinc-200">{items.length} files</span>
-               <span className="w-1 h-1 rounded-full bg-zinc-700"></span>
-               <span className="text-blue-400 font-medium">{dirtyEditCount} unsaved edits</span>
+               <span className="font-medium text-fg">{items.length} file{items.length === 1 ? "" : "s"}</span>
+               {dirtyEditCount > 0 && (
+                 <>
+                   <span className="w-1 h-1 rounded-full bg-elevated2"></span>
+                   <span className="text-blue-600 dark:text-blue-400 font-medium">{dirtyEditCount} unsaved edit{dirtyEditCount === 1 ? "" : "s"}</span>
+                 </>
+               )}
             </span>
           ) : (
             "Select files to begin"
           )}
         </div>
         <div className="flex gap-3">
+          {dirtyFileCount > 0 && (
+            <button
+              onClick={discardAll}
+              disabled={saving}
+              title="Discard all unsaved edits"
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-fg-3 hover:bg-elevated hover:text-fg transition-colors disabled:opacity-50"
+            >
+              <RotateCcw size={16} />
+              Discard
+            </button>
+          )}
           <button
             onClick={pickFiles}
             disabled={loading || saving}
-            className="flex items-center gap-2 rounded-lg bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors disabled:opacity-50"
+            title={`Select files (${MOD_LABEL}O)`}
+            className="flex items-center gap-2 rounded-lg bg-elevated px-4 py-2 text-sm font-medium text-fg-2 hover:bg-elevated2 hover:text-fg transition-colors disabled:opacity-50"
           >
             <Folder size={16} />
             {loading ? "Reading…" : "Select Files"}
@@ -901,6 +1066,7 @@ function BatchView({
           <button
             onClick={saveAll}
             disabled={saving || dirtyFileCount === 0}
+            title={`Save all changes (${MOD_LABEL}S)`}
             className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition-colors disabled:opacity-40 disabled:shadow-none"
           >
             <Save size={16} />
@@ -920,26 +1086,26 @@ function BatchView({
             <div ref={colPickerRef} className="relative">
               <button
                 onClick={() => { setShowColPicker((v) => !v); setColPickerSearch(""); }}
-                className="flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-700 px-3 py-1.5 text-xs text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 transition-colors"
+                className="flex items-center gap-1.5 rounded-lg border border-dashed border-line-strong px-3 py-1.5 text-xs text-fg-4 hover:border-line-strong hover:text-fg-2 transition-colors"
               >
                 <Plus size={12} />
                 Add Column
               </button>
               {showColPicker && (
-                <div className="absolute right-0 top-full z-30 mt-1 w-56 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/50">
-                  <div className="p-2 border-b border-zinc-800">
+                <div className="absolute right-0 top-full z-30 mt-1 w-56 rounded-xl border border-line-strong bg-panel shadow-2xl shadow-black/50">
+                  <div className="p-2 border-b border-line">
                     <input
                       type="text"
                       autoFocus
                       value={colPickerSearch}
                       onChange={(e) => setColPickerSearch(e.target.value)}
                       placeholder="Search tags…"
-                      className="w-full rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:ring-2 focus:ring-blue-500/30"
+                      className="w-full rounded-lg bg-elevated px-3 py-1.5 text-xs text-fg placeholder-fg-4 outline-none focus:ring-2 focus:ring-blue-500/30"
                     />
                   </div>
                   <div className="max-h-48 overflow-y-auto py-1">
                     {filteredColTags.length === 0 ? (
-                      <p className="px-3 py-2 text-xs text-zinc-500">All tags added</p>
+                      <p className="px-3 py-2 text-xs text-fg-4">All tags added</p>
                     ) : (
                       filteredColTags.map((t) => (
                         <button
@@ -949,10 +1115,10 @@ function BatchView({
                             setShowColPicker(false);
                             setColPickerSearch("");
                           }}
-                          className="w-full px-3 py-2 text-left hover:bg-zinc-800 transition-colors"
+                          className="w-full px-3 py-2 text-left hover:bg-elevated transition-colors"
                         >
-                          <span className="block font-mono text-xs text-zinc-200">{t.name}</span>
-                          <span className="block text-[10px] text-zinc-500">{t.hint}</span>
+                          <span className="block font-mono text-xs text-fg">{t.name}</span>
+                          <span className="block text-[10px] text-fg-4">{t.hint}</span>
                         </button>
                       ))
                     )}
@@ -963,12 +1129,12 @@ function BatchView({
           </div>
 
           {/* ── Table ── */}
-          <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 shadow-xl shadow-black/20">
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-xl shadow-black/20">
             <div className="max-h-[70vh] overflow-auto custom-scrollbar">
               <table className="w-full text-left text-sm whitespace-nowrap">
-                <thead className="sticky top-0 z-10 bg-zinc-900/95 backdrop-blur text-xs uppercase tracking-wider text-zinc-500 border-b border-zinc-800">
+                <thead className="sticky top-0 z-10 bg-panel/95 backdrop-blur text-xs uppercase tracking-wider text-fg-4 border-b border-line">
                   <tr>
-                    <th className="sticky left-0 z-20 min-w-[300px] bg-zinc-900/95 backdrop-blur px-5 py-4 font-semibold border-b border-zinc-800">
+                    <th className="sticky left-0 z-20 min-w-[300px] bg-panel/95 backdrop-blur px-5 py-4 font-semibold border-b border-line">
                       File
                     </th>
                     {columns.map((col) => (
@@ -981,18 +1147,18 @@ function BatchView({
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-800/50">
+                <tbody className="divide-y divide-line/50">
                   {items.map((item) => (
                     <tr
                       key={item.file_path}
-                      className="hover:bg-zinc-800/50 transition-colors group"
+                      className="hover:bg-elevated/50 transition-colors group"
                     >
                       <td
-                        className="sticky left-0 z-10 min-w-[300px] bg-zinc-900 group-hover:bg-zinc-800/80 px-5 py-3 font-mono text-xs text-zinc-300 transition-colors"
+                        className="sticky left-0 z-10 min-w-[300px] bg-panel group-hover:bg-elevated/80 px-5 py-3 font-mono text-xs text-fg-2 transition-colors"
                         title={item.file_path}
                       >
                         <div className="flex items-center gap-3">
-                          <FileImage size={16} className="text-zinc-500 shrink-0" />
+                          <FileImage size={16} className="text-fg-4 shrink-0" />
                           <span className="truncate">{basename(item.file_path)}</span>
                         </div>
                         {item.error && (
@@ -1023,10 +1189,10 @@ function BatchView({
                               onChange={(e) =>
                                 setCellEdit(item.file_path, col, e.target.value)
                               }
-                              className={`w-full min-w-[150px] rounded-lg bg-zinc-950/50 border px-3 py-2 font-mono text-xs outline-none focus:bg-zinc-950 focus:ring-2 focus:ring-blue-500/30 disabled:opacity-40 transition-all ${
+                              className={`w-full min-w-[150px] rounded-lg bg-app/50 border px-3 py-2 font-mono text-xs outline-none focus:bg-app focus:ring-2 focus:ring-blue-500/30 disabled:opacity-40 transition-all ${
                                 dirty
-                                  ? "border-blue-500/30 text-blue-200"
-                                  : "border-zinc-800/50 text-zinc-300 hover:border-zinc-700"
+                                  ? "border-blue-500/30 text-blue-700 dark:text-blue-200"
+                                  : "border-line/50 text-fg-2 hover:border-line-strong"
                               }`}
                             />
                             {preview && (
@@ -1045,6 +1211,26 @@ function BatchView({
           </div>
         </>
       )}
+
+      {items.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-32 mt-12 text-center rounded-3xl border border-dashed border-line bg-panel/30">
+          <div className="w-20 h-20 rounded-2xl bg-elevated/80 flex items-center justify-center mb-6 text-fg-3 shadow-inner border border-line-strong/50">
+            <Grid size={36} strokeWidth={1.5} />
+          </div>
+          <h3 className="text-xl font-medium text-fg mb-2 tracking-tight">No files selected</h3>
+          <p className="text-fg-4 max-w-sm mb-8 text-sm">
+            Select multiple files or drop them here to edit their metadata side by side.
+          </p>
+          <button
+            onClick={pickFiles}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-xl bg-inverted px-8 py-3 text-sm font-medium text-on-inverted hover:bg-inverted/85 transition-all shadow-lg hover:shadow-xl active:scale-95 disabled:opacity-60"
+          >
+            <Folder size={18} />
+            {loading ? "Reading…" : "Select Files"}
+          </button>
+        </div>
+      )}
     </section>
   );
 }
@@ -1062,12 +1248,12 @@ function BatchHeaderCell({
 }) {
   const [bulkValue, setBulkValue] = useState("");
   return (
-    <th className="group px-3 py-3 align-bottom font-medium border-b border-zinc-800">
+    <th className="group px-3 py-3 align-bottom font-medium border-b border-line">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="font-mono text-[11px] normal-case text-zinc-400 tracking-normal">{tag}</span>
+        <span className="font-mono text-[11px] normal-case text-fg-3 tracking-normal">{tag}</span>
         <button
           onClick={onRemove}
-          className="p-0.5 text-zinc-600 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+          className="p-0.5 text-fg-5 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
           title="Remove column"
         >
           <X size={12} />
@@ -1079,7 +1265,7 @@ function BatchHeaderCell({
           value={bulkValue}
           onChange={(e) => setBulkValue(e.target.value)}
           placeholder="Apply to all…"
-          className="w-full min-w-[120px] rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 font-mono text-xs font-normal text-zinc-200 focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+          className="w-full min-w-[120px] rounded-lg border border-line-strong bg-app px-3 py-1.5 font-mono text-xs font-normal text-fg focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
         />
         <button
           onClick={() => {
@@ -1088,15 +1274,15 @@ function BatchHeaderCell({
                setBulkValue("");
             }
           }}
-          className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
+          className="rounded-lg bg-elevated px-3 py-1.5 text-xs font-medium text-fg-2 hover:bg-elevated2 hover:text-fg transition-colors"
         >
           Apply
         </button>
       </div>
-      <p className="mt-1.5 text-[10px] text-zinc-600 leading-snug">
-        <span className="font-mono text-zinc-500">{"{filename}"}</span>{" "}name ·{" "}
-        <span className="font-mono text-zinc-500">{"{ext}"}</span>{" "}ext ·{" "}
-        <span className="font-mono text-zinc-500">{"{filename|match:S(\\d+)}"}</span>{" "}regex
+      <p className="mt-1.5 text-[10px] text-fg-5 leading-snug">
+        <span className="font-mono text-fg-4">{"{filename}"}</span>{" "}name ·{" "}
+        <span className="font-mono text-fg-4">{"{ext}"}</span>{" "}ext ·{" "}
+        <span className="font-mono text-fg-4">{"{filename|match:S(\\d+)}"}</span>{" "}regex
       </p>
     </th>
   );
