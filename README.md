@@ -46,10 +46,9 @@ clean macOS-native UI.
 
 ## Installation
 
-Download the latest `.dmg` from [Releases](../../releases) and drag Metid into
-`/Applications/`. On first launch, macOS may prompt for access to your Desktop /
-Documents / Downloads or to network/removable volumes — see the
-[Permissions](#permissions-macos) section below.
+There are currently no pre-built binary releases available. You will need to build Metid from source.
+
+Please follow the [Development](#development) and [Building](#building) instructions below to compile the `.app` bundle locally. Once built, copy `metid.app` to your `/Applications/` folder. On first launch, macOS may prompt for access to your Desktop / Documents / Downloads or to network/removable volumes — see the [Permissions](#permissions-macos) section below.
 
 ## Development
 
