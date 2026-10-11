@@ -17,6 +17,11 @@
    Accent colors (blue/emerald/amber/red) are intentionally NOT tokenized —
    they read well on both light and dark surfaces via their opacity tints.
    ────────────────────────────────────────────────────────────────────────── */
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
 @theme inline {
   --color-app: var(--app);                 /* window / main background          */
   --color-panel: var(--panel);             /* cards, sidebar, dropdowns         */
@@ -87,5 +92,76 @@
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: var(--fg-5);
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Desktop-app behavior: chrome is not selectable, the cursor stays an arrow,
+   the page never rubber-bands, and only editable content opts back in.
+   ────────────────────────────────────────────────────────────────────────── */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  font-size: 13px;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  -webkit-touch-callout: none;
+  background: var(--app);
+}
+
+input,
+textarea,
+[data-selectable] {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
+input:disabled {
+  cursor: default;
+}
+
+/* In the real window the sidebar is the native vibrancy material showing
+   through; in a plain browser (dev) it falls back to a flat tinted surface. */
+.tauri,
+.tauri body {
+  background: transparent;
+}
+.sidebar-surface {
+  background: var(--elevated);
+}
+.tauri .sidebar-surface {
+  background: transparent;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-pop {
+  animation: pop-in 120ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pop {
+    animation: none;
   }
 }

@@ -12,19 +12,34 @@
   "app": {
     "windows": [
       {
-        "title": "metid",
-        "width": 800,
-        "height": 600,
+        "label": "main",
+        "title": "Metid",
+        "width": 1120,
+        "height": 740,
+        "minWidth": 860,
+        "minHeight": 520,
+        "center": true,
         "dragDropEnabled": true,
         "decorations": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "transparent": true
+        "transparent": true,
+        "trafficLightPosition": {
+          "x": 20,
+          "y": 22
+        },
+        "windowEffects": {
+          "effects": [
+            "sidebar"
+          ],
+          "state": "followsWindowActiveState"
+        }
       }
     ],
     "security": {
       "csp": null
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
@@ -39,7 +54,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["exiftool", "mkvpropedit"],
+    "externalBin": [
+      "exiftool",
+      "mkvpropedit"
+    ],
     "resources": [
       "resources/exiftool/lib/**/*",
       "mkvpropedit-libs/*"

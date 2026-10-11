@@ -1,14 +1,36 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, X, Monitor, Sun, Moon } from "lucide-react";
+import { useMemo, type ReactNode } from "react";
+import { Monitor, Moon, Plus, Sun, X } from "lucide-react";
 import { COMMON_TAGS } from "../constants";
-import { Settings } from "../hooks/useSettings";
-import { Theme } from "../hooks/useTheme";
+import type { Settings } from "../hooks/useSettings";
+import type { Theme } from "../hooks/useTheme";
+import { Segmented, Switch, TagPicker, Toolbar } from "./ui";
 
-const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
-  { value: "system", label: "System", icon: Monitor },
-  { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Moon },
+const THEME_OPTIONS: { value: Theme; label: string; icon: ReactNode }[] = [
+  { value: "system", label: "System", icon: <Monitor size={13} /> },
+  { value: "light", label: "Light", icon: <Sun size={13} /> },
+  { value: "dark", label: "Dark", icon: <Moon size={13} /> },
 ];
+
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <h2 className="mb-1.5 px-1 text-[11px] font-semibold text-fg-4">{title}</h2>
+      <div className="divide-y divide-line rounded-lg border border-line bg-panel">{children}</div>
+    </section>
+  );
+}
+
+function Row({ title, description, children }: { title: string; description?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-8 px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium text-fg">{title}</p>
+        {description && <p className="mt-0.5 max-w-md text-xs leading-relaxed text-fg-4">{description}</p>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
 
 export function SettingsView({
   settings,
@@ -17,195 +39,93 @@ export function SettingsView({
   settings: Settings;
   onUpdate: (patch: Partial<Settings>) => void;
 }) {
-  const [showColPicker, setShowColPicker] = useState(false);
-  const [colPickerSearch, setColPickerSearch] = useState("");
-  const colPickerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (colPickerRef.current && !colPickerRef.current.contains(e.target as Node)) {
-        setShowColPicker(false);
-        setColPickerSearch("");
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  const filteredColTags = useMemo(
-    () =>
-      COMMON_TAGS.filter(
-        (t) =>
-          !settings.defaultBatchColumns.includes(t.name) &&
-          (!colPickerSearch ||
-            t.name.toLowerCase().includes(colPickerSearch.toLowerCase()) ||
-            t.hint.toLowerCase().includes(colPickerSearch.toLowerCase())),
-      ),
-    [settings.defaultBatchColumns, colPickerSearch],
+  const availableTags = useMemo(
+    () => COMMON_TAGS.filter((t) => !settings.defaultBatchColumns.includes(t.name)),
+    [settings.defaultBatchColumns],
   );
 
-  function removeColumn(col: string) {
-    onUpdate({ defaultBatchColumns: settings.defaultBatchColumns.filter((c) => c !== col) });
-  }
-
-  function addColumn(name: string) {
-    onUpdate({ defaultBatchColumns: [...settings.defaultBatchColumns, name] });
-    setShowColPicker(false);
-    setColPickerSearch("");
-  }
-
   return (
-    <section className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-fg">Settings</h1>
-        <p className="mt-1 text-sm text-fg-4">
-          Preferences are saved automatically to local storage.
-        </p>
-      </div>
+    <div className="flex h-full min-w-0 flex-col">
+      <Toolbar title="Settings" />
+      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto bg-app px-6 py-6">
+        <div className="mx-auto max-w-xl space-y-6">
+          <Group title="Appearance">
+            <Row title="Theme" description="Follow the system setting, or pick one.">
+              <Segmented
+                value={settings.theme}
+                onChange={(theme) => onUpdate({ theme })}
+                options={THEME_OPTIONS}
+              />
+            </Row>
+          </Group>
 
-      {/* ── Appearance ── */}
-      <div className="rounded-2xl border border-line bg-panel p-6">
-        <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-fg-4">
-          Appearance
-        </h2>
-        <p className="mb-5 text-xs text-fg-4">
-          Choose a theme, or follow your operating system setting automatically.
-        </p>
-
-        <div className="inline-flex w-full max-w-sm gap-1 rounded-xl border border-line bg-app p-1">
-          {THEME_OPTIONS.map(({ value, label, icon: Icon }) => {
-            const active = settings.theme === value;
-            return (
-              <button
-                key={value}
-                onClick={() => onUpdate({ theme: value })}
-                aria-pressed={active}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  active
-                    ? "bg-panel text-fg shadow-sm border border-line"
-                    : "border border-transparent text-fg-4 hover:text-fg"
-                }`}
-              >
-                <Icon size={15} strokeWidth={2} />
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── File Safety ── */}
-      <div className="rounded-2xl border border-line bg-panel p-6">
-        <h2 className="mb-5 text-[11px] font-semibold uppercase tracking-widest text-fg-4">
-          File Safety
-        </h2>
-
-        <div className="flex items-start justify-between gap-8">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-fg">Keep original file backups</p>
-            <p className="mt-1.5 text-xs text-fg-4 leading-relaxed max-w-sm">
-              When enabled, ExifTool creates a{" "}
-              <code className="rounded bg-elevated px-1 py-0.5 font-mono text-fg-2">
-                _original
-              </code>{" "}
-              backup beside each file before writing. Disable to overwrite files directly and
-              save disk space.
-            </p>
-          </div>
-
-          {/* Toggle switch */}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={settings.keepBackups}
-            onClick={() => onUpdate({ keepBackups: !settings.keepBackups })}
-            className={`relative mt-0.5 inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-zinc-900 ${
-              settings.keepBackups ? "bg-blue-600" : "bg-elevated2"
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform duration-200 ${
-                settings.keepBackups ? "translate-x-5" : "translate-x-1"
-              }`}
-            />
-          </button>
-        </div>
-      </div>
-
-      {/* ── Default Batch Columns ── */}
-      <div className="rounded-2xl border border-line bg-panel p-6">
-        <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-fg-4">
-          Default Batch Columns
-        </h2>
-        <p className="mb-5 text-xs text-fg-4">
-          Columns shown by default when opening Batch Edit. You can always add or remove columns
-          per session.
-        </p>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {settings.defaultBatchColumns.map((col) => (
-            <span
-              key={col}
-              className="flex items-center gap-1.5 rounded-full border border-line-strong bg-elevated px-3 py-1 font-mono text-xs text-fg"
+          <Group title="File Safety">
+            <Row
+              title="Keep original file backups"
+              description={
+                <>
+                  ExifTool writes an{" "}
+                  <code className="rounded bg-elevated px-1 font-mono text-fg-2">_original</code> copy
+                  beside each file before changing it. Turn off to overwrite in place and save disk space.
+                </>
+              }
             >
-              {col}
-              <button
-                onClick={() => removeColumn(col)}
-                className="text-fg-4 hover:text-red-400 transition-colors"
-                title={`Remove ${col}`}
-              >
-                <X size={11} />
-              </button>
-            </span>
-          ))}
+              <Switch
+                checked={settings.keepBackups}
+                onChange={(keepBackups) => onUpdate({ keepBackups })}
+                label="Keep original file backups"
+              />
+            </Row>
+          </Group>
 
-          {/* Add Column picker */}
-          <div ref={colPickerRef} className="relative">
-            <button
-              onClick={() => { setShowColPicker((v) => !v); setColPickerSearch(""); }}
-              className="flex items-center gap-1.5 rounded-full border border-dashed border-line-strong px-3 py-1 text-xs text-fg-4 hover:border-line-strong hover:text-fg-2 transition-colors"
-            >
-              <Plus size={11} />
-              Add
-            </button>
-
-            {showColPicker && (
-              <div className="absolute left-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-xl border border-line-strong bg-panel shadow-2xl shadow-black/50">
-                <div className="border-b border-line p-2">
-                  <input
-                    type="text"
-                    autoFocus
-                    value={colPickerSearch}
-                    onChange={(e) => setColPickerSearch(e.target.value)}
-                    placeholder="Search tags…"
-                    className="w-full rounded-lg bg-elevated px-3 py-1.5 text-xs text-fg placeholder-fg-4 outline-none focus:ring-2 focus:ring-blue-500/30"
-                  />
-                </div>
-                <div className="max-h-48 overflow-y-auto py-1 custom-scrollbar">
-                  {filteredColTags.length === 0 ? (
-                    <p className="px-3 py-2 text-xs text-fg-4">All tags added</p>
-                  ) : (
-                    filteredColTags.map((t) => (
-                      <button
-                        key={t.name}
-                        onClick={() => addColumn(t.name)}
-                        className="w-full px-3 py-2 text-left transition-colors hover:bg-elevated"
-                      >
-                        <span className="block font-mono text-xs text-fg">{t.name}</span>
-                        <span className="block text-[10px] text-fg-4">{t.hint}</span>
-                      </button>
-                    ))
+          <Group title="Batch Edit">
+            <div className="px-4 py-3">
+              <p className="text-[13px] font-medium text-fg">Default columns</p>
+              <p className="mb-3 mt-0.5 text-xs text-fg-4">
+                Shown when you start Batch Edit. You can still add or remove columns per session.
+              </p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {settings.defaultBatchColumns.map((col) => (
+                  <span
+                    key={col}
+                    className="flex h-6 items-center gap-1 rounded-full bg-elevated pl-2.5 pr-1.5 text-xs text-fg"
+                  >
+                    {col}
+                    <button
+                      onClick={() =>
+                        onUpdate({ defaultBatchColumns: settings.defaultBatchColumns.filter((c) => c !== col) })
+                      }
+                      title={`Remove ${col}`}
+                      className="rounded-full p-0.5 text-fg-4 hover:bg-ovl/10 hover:text-red-500"
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+                <TagPicker
+                  tags={availableTags}
+                  align="left"
+                  emptyText="All tags added"
+                  onPick={(name) =>
+                    onUpdate({ defaultBatchColumns: [...settings.defaultBatchColumns, name] })
+                  }
+                  renderTrigger={({ onClick }) => (
+                    <button
+                      onClick={onClick}
+                      className="flex h-6 items-center gap-1 rounded-full border border-dashed border-line-strong px-2.5 text-xs text-fg-4 hover:text-fg"
+                    >
+                      <Plus size={11} /> Add
+                    </button>
                   )}
-                </div>
+                />
+                {settings.defaultBatchColumns.length === 0 && (
+                  <span className="text-xs italic text-fg-5">No default columns</span>
+                )}
               </div>
-            )}
-          </div>
-
-          {settings.defaultBatchColumns.length === 0 && (
-            <span className="text-xs text-fg-5 italic">No default columns — add one above.</span>
-          )}
+            </div>
+          </Group>
         </div>
       </div>
-    </section>
+    </div>
   );
 }

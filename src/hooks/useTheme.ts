@@ -1,4 +1,6 @@
 import { useEffect } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export type Theme = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
@@ -29,6 +31,13 @@ export function useApplyTheme(
       const root = document.documentElement;
       root.classList.toggle("dark", resolved === "dark");
       root.style.colorScheme = resolved;
+      // Keep the native window appearance (vibrancy, title bar) in step with
+      // the in-app choice; null hands control back to the OS.
+      if (isTauri()) {
+        getCurrentWindow()
+          .setTheme(theme === "system" ? null : theme)
+          .catch(() => {});
+      }
       onResolved?.(resolved);
     }
     apply();
